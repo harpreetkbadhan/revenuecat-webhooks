@@ -1,6 +1,14 @@
 import 'reflect-metadata';
 import { createHmac } from 'node:crypto';
-import { Controller, HttpCode, type INestApplication, Post, UseGuards } from '@nestjs/common';
+import {
+  Controller,
+  type DynamicModule,
+  HttpCode,
+  type INestApplication,
+  Module,
+  Post,
+  UseGuards,
+} from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import request from 'supertest';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -68,6 +76,47 @@ describe('RevenueCatWebhookGuard', () => {
         controllers: [HookController],
       }).compile(),
     ).rejects.toThrow(/authorization.*signingSecret/);
+  });
+});
+
+describe('RevenueCatWebhookModule.forRootAsync', () => {
+  const SECRET_TOKEN = 'SECRET_FROM_CONFIG';
+
+  @Module({})
+  class ConfigLikeModule {
+    static with(secret: string): DynamicModule {
+      return {
+        module: ConfigLikeModule,
+        providers: [{ provide: SECRET_TOKEN, useValue: secret }],
+        exports: [SECRET_TOKEN],
+      };
+    }
+  }
+
+  async function startAsync(secret: string) {
+    const moduleRef = await Test.createTestingModule({
+      imports: [
+        RevenueCatWebhookModule.forRootAsync({
+          imports: [ConfigLikeModule.with(secret)],
+          inject: [SECRET_TOKEN],
+          useFactory: async (authorization: string) => ({ authorization }),
+        }),
+      ],
+      controllers: [HookController],
+    }).compile();
+    app = moduleRef.createNestApplication({ logger: false });
+    await app.init();
+    return request(app.getHttpServer());
+  }
+
+  it('reads the options from injected providers, also asynchronously', async () => {
+    const http = await startAsync('Bearer from-config');
+    await http.post('/webhooks/revenuecat').set('Authorization', 'Bearer from-config').send(body).expect(200);
+    await http.post('/webhooks/revenuecat').set('Authorization', 'Bearer nope').send(body).expect(401);
+  });
+
+  it('refuses to start when the factory returns an empty secret', async () => {
+    await expect(startAsync('')).rejects.toThrow(/empty/);
   });
 });
 

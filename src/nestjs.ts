@@ -4,9 +4,11 @@ import {
   createParamDecorator,
   type DynamicModule,
   type ExecutionContext,
+  type FactoryProvider,
   Inject,
   Injectable,
   Module,
+  type ModuleMetadata,
   UnauthorizedException,
 } from '@nestjs/common';
 import { parseWebhook, RevenueCatWebhookError } from './events.js';
@@ -127,4 +129,45 @@ export class RevenueCatWebhookModule {
       exports: [REVENUECAT_WEBHOOK_OPTIONS, RevenueCatWebhookGuard],
     };
   }
+
+  /**
+   * Like {@link forRoot}, with the options built by a factory, typically from `ConfigService`:
+   *
+   * ```ts
+   * RevenueCatWebhookModule.forRootAsync({
+   *   imports: [ConfigModule],
+   *   inject: [ConfigService],
+   *   useFactory: (config: ConfigService) => ({ authorization: config.get('REVENUECAT_WEBHOOK_AUTH') }),
+   * })
+   * ```
+   */
+  static forRootAsync(options: RevenueCatWebhookAsyncOptions): DynamicModule {
+    return {
+      module: RevenueCatWebhookModule,
+      global: true,
+      imports: options.imports ?? [],
+      providers: [
+        {
+          provide: REVENUECAT_WEBHOOK_OPTIONS,
+          inject: options.inject ?? [],
+          useFactory: async (...args: unknown[]) => {
+            const resolved = await options.useFactory(...args);
+            assertValidOptions(resolved);
+            return resolved;
+          },
+        },
+        RevenueCatWebhookGuard,
+      ],
+      exports: [REVENUECAT_WEBHOOK_OPTIONS, RevenueCatWebhookGuard],
+    };
+  }
+}
+
+export interface RevenueCatWebhookAsyncOptions {
+  /** Modules that provide what the factory injects, such as `ConfigModule`. */
+  imports?: ModuleMetadata['imports'];
+  /** Providers passed to the factory, in order. */
+  inject?: FactoryProvider['inject'];
+  // Method syntax so a factory with typed parameters (config: ConfigService) is accepted.
+  useFactory(...args: unknown[]): RevenueCatWebhookOptions | Promise<RevenueCatWebhookOptions>;
 }

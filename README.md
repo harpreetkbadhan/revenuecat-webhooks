@@ -36,6 +36,18 @@ import { RevenueCatWebhookModule } from 'revenuecat-webhooks/nestjs';
 export class AppModule {}
 ```
 
+Reading secrets through `ConfigService`? Use `forRootAsync`:
+
+```ts
+RevenueCatWebhookModule.forRootAsync({
+  imports: [ConfigModule],
+  inject: [ConfigService],
+  useFactory: (config: ConfigService) => ({
+    authorization: config.get('REVENUECAT_WEBHOOK_AUTH'),
+  }),
+});
+```
+
 ```ts
 // revenuecat.controller.ts
 import type { RevenueCatEvent } from 'revenuecat-webhooks';
